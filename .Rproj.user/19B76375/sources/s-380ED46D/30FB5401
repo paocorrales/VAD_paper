@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1563816362589.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1900759529",
+    "id" : "30FB5401",
+    "lastKnownWriteTime" : 1564161748,
+    "last_content_update" : 1564161748460,
+    "path" : "~/VAD_paper/tiding_sounding.R",
+    "project_path" : "tiding_sounding.R",
+    "properties" : {
+        "cursorPosition" : "21,40",
+        "scrollLine" : "6",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}
