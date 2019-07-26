@@ -1,0 +1,60 @@
+---
+title: "01_preliminares"
+author: "Pao"
+date: "7/26/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(rvad)
+library(ggplot2)
+library(data.table)
+library(metR)
+library(dplyr)
+```
+
+## "Mejores" casos para estudiar el skill del algoritmo
+
+Comparando rápidamente el perfil que calcula el VAD (usando la configuración por defecto) con los sondeos, hay dos tiempos que se ven muy bien son:
+
+* 20181121_12
+
+![Posible caso 1](/mnt/Data/VAD/RMA4/fig/vad_20181121_120124.png)
+
+* 20181229_12
+
+![Posible caso 2](/mnt/Data/VAD/RMA4/fig/vad_20181229_115748.png)
+
+Me voy a quedar con el segundo para hacer las pruebas.
+
+```{r}
+path <- "/mnt/Data/VAD/RMA4/cfrad.20181121_120124.0000_to_20181121_120412.0000_RMA4_0200_02.nc"
+
+radial_wind <- ReadNetCDF(path, vars = c("Vda", "azimuth", "elevation"))
+VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation))
+setDT(VAD)
+```
+
+## 1. Efecto del tamaño del volumen escaneado
+
+Quiero ver cual es el efecto que genera el aumento de volumen con el rango. Si el campo de viento fuera homogeneo, no tendríamos problemas porque por más que incluyamos observaciones en rangos muy grandes que representan un volumen de atmósfera muy grande el viento sería siempre el mismo.
+
+
+```{r}
+VAD[, spd := sqrt(u^2 + v^2)]
+
+na.omit(VAD) %>% 
+  .[, FitLm(spd, range, se = TRUE), by = cut_width(height, 100)] %>% 
+  .[term == "range"] %>% 
+  ggplot(aes(estimate, cut_width)) +
+  geom_point(aes(color = df)) +
+  geom_errorbarh(aes(xmin = estimate - std.error*2, xmax = estimate + std.error*2))
+
+
+VAD %>% 
+  ggplot(aes(sqrt(u^2 + v^2), range)) +
+  geom_point(aes(color = factor(elevation)))
+```
+
