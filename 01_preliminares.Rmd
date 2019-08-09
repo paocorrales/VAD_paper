@@ -30,7 +30,7 @@ Comparando rápidamente el perfil que calcula el VAD (usando la configuración p
 Me voy a quedar con el segundo para hacer las pruebas.
 
 ```{r}
-path <- "/mnt/Data/VAD/RMA4/cfrad.20181121_120124.0000_to_20181121_120412.0000_RMA4_0200_02.nc"
+path <- "../VAD/RMA4/cfrad.20181121_120124.0000_to_20181121_120412.0000_RMA4_0200_02.nc"
 
 radial_wind <- ReadNetCDF(path, vars = c("Vda", "azimuth", "elevation"))
 VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation))
@@ -56,5 +56,59 @@ na.omit(VAD) %>%
 VAD %>% 
   ggplot(aes(sqrt(u^2 + v^2), range)) +
   geom_point(aes(color = factor(elevation)))
+```
+
+```{r}
+na.omit(VAD) %>% 
+  .[, .N, by = .(range = cut_width(range, 5000), 
+                 height = cut_width(height, 100))] %>% 
+  ggplot(aes(range, height)) +
+  geom_point(aes(color = N))
+
+na.omit(VAD) %>% 
+  copy() %>% 
+  .[, range_cut := cut_width(range, 5000)] %>% 
+  .[, vad_regrid(.SD, layer_width = 200, ht.out = seq(200, 2000, 100)), 
+    by = .(range_cut)] %>% 
+  ggplot(aes(height, sqrt(u^2 + v^2))) +
+  geom_line(aes(color = range_cut)) +
+  geom_point(aes(color = range_cut)) +
+  scale_color_viridis_d() +
+  coord_flip()
+
+```
+
+$ Vr =  v \cos(\theta) \cos(\phi) + u \cos(\theta) \sin(\phi) - w \sin(\theta)$
+
+```{r}
+perfil <- vad_regrid(VAD, layer)
+radial_wind[, height := beam_propagation(range, elevation)["ht"]] %>% 
+  .[, c("u", "v") := vad_regrid(VAD, layer_width = 100, ht.out = height)[c("u", "v")]]
+
+radial_wind[, vr := v*cos(elevation*pi/1800)*cos(azimuth*pi/180) + u*cos(elevation*pi/180)*sin(azimuth*pi/180)]
+  
+radial_wind %>% 
+  .[elevation ==  elevation[1]] %>% 
+  ggplot(aes(azimuth, range)) +
+  geom_point(aes(color = vr - Vda)) +
+  scale_color_divergent() +
+  coord_polar()
+
+```
+
+```{r}
+vr_vad <- with(radial_wind, vad_fit(vr, azimuth, range, elevation))
+
+setDT(vr_vad)
+na.omit(vr_vad) %>% 
+  copy() %>% 
+  .[, range_cut := cut_width(range, 10000)] %>% 
+  .[, vad_regrid(.SD, layer_width = 200, ht.out = seq(200, 2000, 100)), 
+    by = .(range_cut)] %>% 
+  ggplot(aes(height, sqrt(u^2 + v^2))) +
+  geom_line(aes(color = range_cut)) +
+  geom_point(aes(color = range_cut)) +
+  scale_color_viridis_d() +
+  coord_flip()
 ```
 
