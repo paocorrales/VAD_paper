@@ -58,4 +58,32 @@ for (i in seq_along(files)) {
   
   ggsave(paste0("/mnt/Data/VAD/RMA4/fig/vad_", substr(basename(files[i]), 7, 21), ".png"))
   
-  }
+}
+
+# Campo de viento sintético
+
+# radial_wind[, height := beam_propagation(range, elevation)["ht"]] %>% 
+#   .[, c("u", "v") := vad_regrid(VAD, layer_width = 100, ht.out = height)[c("u", "v")]]
+
+radial_wind[, vr := v*cos(elevation*pi/1800)*cos(azimuth*pi/180) + u*cos(elevation*pi/180)*sin(azimuth*pi/180)]
+
+radial_wind %>% 
+  .[elevation ==  elevation[1]] %>% 
+  ggplot(aes(azimuth, range)) +
+  geom_point(aes(color = vr)) +
+  scale_color_divergent() +
+  coord_polar()
+
+vr_vad <- with(radial_wind, vad_fit(vr, azimuth, range, elevation))
+
+setDT(vr_vad)
+na.omit(vr_vad) %>% 
+  copy() %>% 
+  .[, range_cut := cut_width(range, 10000)] %>% 
+  .[, vad_regrid(.SD, layer_width = 200, ht.out = seq(200, 2000, 100)), 
+    by = .(range_cut)] %>% 
+  ggplot(aes(height, sqrt(u^2 + v^2))) +
+  geom_line(aes(color = range_cut)) +
+  geom_point(aes(color = range_cut)) +
+  scale_color_viridis_d() +
+  coord_flip()
