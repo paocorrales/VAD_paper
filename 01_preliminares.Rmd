@@ -42,7 +42,7 @@ VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation)) %>%
 
 Quiero ver cual es el efecto que genera el aumento de volumen con el rango. Si el campo de viento fuera homogeneo, no tendríamos problemas porque por más que incluyamos observaciones en rangos muy grandes que representan un volumen de atmósfera muy grande el viento sería siempre el mismo.
 
-Idea 1: La correlación entre la magnitud de la velocidad y el rango es distinta dependiendo de la curvatura del perfil. En el máximo del jet espero que la relación entre las dos variables sea indirecta ya que a mayor rango estoy sensando un volumen de atmósfera mayor y entonces el máximo de viento se *suaviza*. Si el perfil es homogeneo con la altura la pendiente será nula. Pero el perfil no es tan simple, hay regiones donde la curvatura es positiva por ejemplo.
+Idea 1: La correlación entre la magnitud de la velocidad y el rango es distinta dependiendo de la curvatura del perfil. En el máximo del jet espero que la relación entre las dos variables sea indirecta ya que a mayor rango estoy censando un volumen de atmósfera mayor y entonces el máximo de viento se *suaviza*. Si el perfil es homogeneo con la altura la pendiente será nula. Pero el perfil no es tan simple, hay regiones donde la curvatura es positiva por ejemplo.
 
 En la primera figura se muestra la relación entre el rango y la velocidad para distintas capas de atmósfera de 200 metros de espesor y en colores las distintas elevaciones. Y a partir de la capa (500,700] y hasta aproximadamente (1300,1500] la relación es algo negativa. Si bien esto es lo esperado, no se ve super claramente y hay variaciones en los distintos ángulos de elevación. Además si calculamos la correlación entre las dos variables para cada capa _sin tener en cuenta el ángulo de elevación_ en algunos casos esta tiene signo contrario! Esto imagino que es por que el campo de viento no es tan homogeneo como debería.
 
@@ -62,7 +62,7 @@ VAD[, height_cut := cut_width(height, 200)] %>%
 
 ```
 
-Si analizamos el valor de la pendiente en cada capa de atmósfera y cada ángulo de elevación se puede ver que hay capas donde todos o casi todos los ángulos de elevación muestran una relación inversamente proporcional entre el rango y la velocidad. Esto es así a partir de la capa (500,700]. Pero los valores de pendiente más negativa no coinciden con el máximo del jet ya que ocurren en (1100,1300]. 
+Si analizamos el valor de la pendiente en cada capa de atmósfera y cada ángulo de elevación se puede ver que hay capas donde todos o casi todos los ángulos de elevación muestran una relación inversamente proporcional entre el rango y la velocidad. Esto es así a partir de la capa (500,700]. Pero los valores de pendiente más negativa  en (1100,1300] no coinciden con el máximo del jet que ocurre en ~500 metros. 
 
 ```{r}
 na.omit(VAD) %>% 
@@ -95,7 +95,7 @@ vad_regrid(VAD, layer_width = 300, ht.out = seq(200, 2000, 100)) %>%
 
 Idea 2: A rango constante, el volumen escaneado es mayor para ángulos de elevación mayores. Eso podría implicar que la velocidad medida es menor para elevaciones mayores?
 
-Por el gráfico parece haber una relación inversa entre el ángulo de elevación y la velocidad. Pero al mismo tiempo hay que tener en cuenta que la velocidad varía con la altura y que ángulos mayores sensan alturas mayores (siempre manteniendo en rango constante) y como en este caso la velocidad disminuye con la altura luego del jet, la relación que se observa podría ser por eso.
+El siguiente gráfico muestra la velocidad en función de cada elevación y en color la altura de esa observación, cada cuadro corresponde a un intervalo de rango constante. Por el gráfico parece haber una relación inversa entre el ángulo de elevación y la velocidad. Pero al mismo tiempo hay que tener en cuenta que la velocidad varía con la altura y que ángulos mayores sensan alturas mayores (siempre manteniendo en rango constante) y como en este caso la velocidad disminuye con la altura luego del jet, la relación que se observa podría ser por eso.
 
 ```{r}
 na.omit(VAD) %>% 
@@ -107,7 +107,6 @@ na.omit(VAD) %>%
   facet_wrap(~range_cut, scale = "free")
 ```
 
-Si graficamos  el perfil que genera el `vad_regrid()` para cada rango, lo esperable es que para rangos más lejanos el máximo de viento en el jet sea cada vez menor pues el volumen de aire escaneado aumenta y entonces mayores velocidades *se promedian* con velocidades menores por encima y por abajo del máximo. No ocurre eso sino todo lo contrario.
 
 ```{r}
 na.omit(VAD) %>% 
@@ -129,14 +128,72 @@ na.omit(VAD) %>%
 
 ```
 
-$ Vr =  v \cos(\theta) \cos(\phi) + u \cos(\theta) \sin(\phi) - w \sin(\theta)$
+Si graficamos  el perfil que genera el `vad_regrid()` para cada rango, lo esperable es que para rangos más lejanos el máximo de viento en el jet sea cada vez menor pues el volumen de aire escaneado aumenta y entonces mayores velocidades *se promedian* con velocidades menores por encima y por abajo del máximo. No ocurre eso sino todo lo contrario.
+
+## 2. Efecto del tamaño del gap
+
+Queremos ver que pasa cuando los datos tienen huecos. Hasta ahora la función tienen un argumento para controlar el gap máximo aceptado que por default es 30 grados según algún paper que encontré. La idea es a partir del mismo volumen quitarle datos para generar distintos gaps y ver como eso afecta el perfil final. El campo de viento para la elevación 2.99 grados es la siguiente. 
 
 ```{r}
-
-
+na.omit(radial_wind) %>% 
+  .[elevation == unique(elevation)[3] & range < 50000] %>% 
+  ggplot(aes(azimuth, range)) +
+  geom_point(aes(color =  Vda, size = range)) +
+  scale_color_divergent() +
+  scale_size_area(max_size = 2) +
+  coord_polar()
 ```
 
 ```{r}
 
+gaps <- seq(0, 180, 10)
+
+elev_gap <-  lapply(gaps, function(i) { 
+  copy(radial_wind) %>% 
+    .[azimuth %between% c(0, i), Vda := NA] %>%
+    .[, gap := i] 
+  }) %>% 
+  rbindlist()
+
+na.omit(elev_gap) %>% 
+  .[gap %in% c(10, 30, 60, 90, 120, 150, 180)] %>%
+  .[elevation == unique(elevation)[3] & range < 50000] %>% 
+  ggplot(aes(azimuth, range)) +
+  geom_point(aes(color =  Vda, size = range)) +
+  scale_color_divergent() +
+  scale_size_area(max_size = 2) +
+  coord_polar() +
+  facet_wrap(~gap)
+```
+
+```{r}
+vad_gap <- elev_gap %>% 
+  .[, vad_fit(Vda, azimuth, range, elevation, max_consecutive_na = 200, max_na = 0.6), by = .(gap)] 
+
+na.omit(vad_gap) %>% 
+  ggplot(aes(height, sqrt(u^2 + v^2))) +
+  geom_point(aes(color = factor(elevation))) +
+  coord_flip() +
+  facet_wrap(~gap)
+```
+
+```{r}
+regrid_gap <- vad_gap[, vad_regrid(.SD, layer_width = 100, ht.out = seq(100, 2000, 100)), by = .(gap)] %>% 
+  .[, spd := sqrt(u^2 + v^2)] 
+
+
+regrid_gap[gap == 0, .(height, control = spd)] %>% 
+  .[regrid_gap, on = c("height")] %>% 
+  ggplot(aes(height, spd - control)) +
+  # geom_point(aes(color = factor(gap))) +
+  geom_line(aes(color = factor(gap))) +
+  coord_flip() 
+```
+
+```{r}
+regrid_gap_w <- dcast(regrid_gap, height ~ gap, value.var = "spd")
+
+regrid_gap_w %>% 
+  ggplot(aes(height, ))
 ```
 
