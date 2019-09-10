@@ -190,10 +190,11 @@ regrid_gap[gap == 0, .(height, control = spd)] %>%
   coord_flip() 
 ```
 
-```{r}
-regrid_gap_w <- dcast(regrid_gap, height ~ gap, value.var = "spd")
 
-regrid_gap_w %>% 
-  ggplot(aes(height, ))
+## 3. Promedio temporal del caso seleccionado
+
+Usar sondeos para validar los perfiles que general el VAD es complejo porque los sondeos tienen poca resolucón vertical y además no son instantaneos (puede demorar hasta una hora llegar a la tropopausa)
+```{r}
+# Hay que leer varios tiempos juntos
 ```
 
