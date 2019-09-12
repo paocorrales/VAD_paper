@@ -196,6 +196,8 @@ regrid_gap[gap == 0, .(height, control = spd)] %>%
 ## 3. Promedio temporal del caso seleccionado
 
 Usar sondeos para validar los perfiles que general el VAD es complejo porque los sondeos tienen poca resolucón vertical y además no son instantaneos (puede demorar hasta una hora llegar a la tropopausa)
+
+### Caso 1
 ```{r}
 # Hay que leer varios tiempos juntos, calcular el VAD y promediar eso.
 
@@ -238,3 +240,47 @@ radial_wind[, .(mean.spd = mean(spd), sd = sd(spd)), by = .(height)] %>%
   labs(x = "spd", y = "height")
 ```
 
+
+### Caso 2
+
+```{r}
+# Hay que leer varios tiempos juntos, calcular el VAD y promediar eso.
+
+files <- Sys.glob("/mnt/Data/VAD/RMA4/cfrad.20181229*")
+
+radial_wind <- lapply(files, function(f) {
+  temp <- ReadNetCDF(f, vars = c("Vda", "azimuth", "elevation"))
+  date_time <- ymd_hms(str_extract(basename(f), "\\d{8}_\\d{6}"))
+  
+  VAD <- with(temp, vad_fit(Vda, azimuth, range, elevation)) %>% 
+    # vad_regrid(layer_width = 100, ht.out = seq(100, 2000, 100)) %>% 
+    setDT() %>% 
+    .[, date.time := date_time] %>% 
+    .[, spd := sqrt(u^2 + v^2)]
+  }) %>% 
+rbindlist()  
+
+soundings <- fread("data/soundings_87155.csv") %>% 
+  .[, time := as_datetime(time)] %>% 
+  .[time  == as_datetime("20181229120000")]
+```
+
+
+```{r}
+radial_wind[, time := interval(date.time[1], date.time)] %>% 
+  ggplot(aes(height  + 119, spd)) +
+  geom_point(aes(group = date.time, color = as.numeric(time)/3600)) +
+  geom_line(data = na.omit(soundings), aes(height, windspd/10)) +
+  scale_color_viridis_c(name = "Horas desde las 11UTC") +
+  coord_flip(xlim = c(0, 2000), ylim = c(0, 15))
+```
+
+```{r}
+radial_wind[, .(mean.spd = mean(spd), sd = sd(spd)), by = .(height)] %>% 
+  ggplot(aes(height + 119, mean.spd)) +
+  geom_ribbon(aes(ymin = mean.spd - sd, ymax = mean.spd + sd), alpha = 0.2) +
+  geom_line(color = "#FD8002") +
+  geom_line(data = na.omit(soundings), aes(height, windspd/10), color = "#367DB7") +
+  coord_flip(xlim = c(0, 2000), ylim = c(0, 15)) +
+  labs(x = "spd", y = "height")
+```

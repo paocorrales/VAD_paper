@@ -87,3 +87,17 @@ na.omit(vr_vad) %>%
   geom_point(aes(color = range_cut)) +
   scale_color_viridis_d() +
   coord_flip()
+
+
+# Prueba para el 19/12
+
+radial_wind <- ReadNetCDF("/mnt/Data/VAD/RMA4/cfrad.20181229_115748.0000_to_20181229_120030.0000_RMA4_0200_02.nc", 
+                          vars = c("Vda", "azimuth", "elevation"))
+
+VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation, r2_min = 0.2)) %>% 
+  vad_regrid(layer_width = 100, ht.out = seq(100, 2000, 100))
+
+na.omit(VAD) %>% 
+  ggplot(aes(height, sqrt(u^2 + v^2))) +
+  geom_line() +
+  coord_flip()
