@@ -24,11 +24,11 @@ Comparando rápidamente el perfil que calcula el VAD (usando la configuración p
 
 * 20181121_12
 
-![Posible caso 1](/mnt/Data/VAD/RMA4/fig/vad_20181121_120124.png)
+![Posible caso 1](/mnt/Data/VAD/RMA4/fig/vad_20181121_110832.png)
 
 * 20181229_12
 
-![Posible caso 2](/mnt/Data/VAD/RMA4/fig/vad_20181229_115748.png)
+![Posible caso 2](/mnt/Data/VAD/RMA4/fig/vad_20181229_110448.png)
 
 Me voy a quedar con el segundo para hacer las pruebas.
 
@@ -201,7 +201,7 @@ Usar sondeos para validar los perfiles que general el VAD es complejo porque los
 ```{r}
 # Hay que leer varios tiempos juntos, calcular el VAD y promediar eso.
 
-files <- Sys.glob("/mnt/Data/VAD/RMA4/cfrad.20181121*")
+files <- Sys.glob("/mnt/Data/VAD/RMA4/cfrad.20181121_11*")
 
 radial_wind <- lapply(files, function(f) {
   temp <- ReadNetCDF(f, vars = c("Vda", "azimuth", "elevation"))
@@ -215,7 +215,7 @@ radial_wind <- lapply(files, function(f) {
   }) %>% 
 rbindlist()  
 
-soundings <- fread("data/soundings_87155.csv") %>% 
+soundings <- fread("data/soundings_wyoming_87155.csv") %>% 
   .[, time := as_datetime(time)] %>% 
   .[time  == as_datetime("20181121120000")]
 ```
@@ -225,7 +225,7 @@ soundings <- fread("data/soundings_87155.csv") %>%
 radial_wind[, time := interval(date.time[1], date.time)] %>% 
   ggplot(aes(height  + 119, spd)) +
   geom_line(aes(group = date.time, color = as.numeric(time)/3600)) +
-  geom_line(data = na.omit(soundings), aes(height, windspd/10)) +
+  geom_line(data = na.omit(soundings), aes(height, spd)) +
   scale_color_viridis_c(name = "Horas desde las 11UTC") +
   coord_flip(xlim = c(0, 2000), ylim = c(0, 15))
 ```
@@ -235,7 +235,7 @@ radial_wind[, .(mean.spd = mean(spd), sd = sd(spd)), by = .(height)] %>%
   ggplot(aes(height + 119, mean.spd)) +
   geom_ribbon(aes(ymin = mean.spd - sd, ymax = mean.spd + sd), alpha = 0.2) +
   geom_line(color = "#FD8002") +
-  geom_line(data = na.omit(soundings), aes(height, windspd/10), color = "#367DB7") +
+  geom_line(data = na.omit(soundings), aes(height, spd), color = "#367DB7") +
   coord_flip(xlim = c(0, 2000), ylim = c(0, 15)) +
   labs(x = "spd", y = "height")
 ```
@@ -246,7 +246,7 @@ radial_wind[, .(mean.spd = mean(spd), sd = sd(spd)), by = .(height)] %>%
 ```{r}
 # Hay que leer varios tiempos juntos, calcular el VAD y promediar eso.
 
-files <- Sys.glob("/mnt/Data/VAD/RMA4/cfrad.20181229*")
+files <- Sys.glob("/mnt/Data/VAD/RMA4/cfrad.20181229_11*")
 
 radial_wind <- lapply(files, function(f) {
   temp <- ReadNetCDF(f, vars = c("Vda", "azimuth", "elevation"))
@@ -260,7 +260,7 @@ radial_wind <- lapply(files, function(f) {
   }) %>% 
 rbindlist()  
 
-soundings <- fread("data/soundings_87155.csv") %>% 
+soundings <- fread("data/soundings_wyoming_87155.csv") %>% 
   .[, time := as_datetime(time)] %>% 
   .[time  == as_datetime("20181229120000")]
 ```
@@ -269,8 +269,8 @@ soundings <- fread("data/soundings_87155.csv") %>%
 ```{r}
 radial_wind[, time := interval(date.time[1], date.time)] %>% 
   ggplot(aes(height  + 119, spd)) +
-  geom_point(aes(group = date.time, color = as.numeric(time)/3600)) +
-  geom_line(data = na.omit(soundings), aes(height, windspd/10)) +
+  geom_line(aes(group = date.time, color = as.numeric(time)/3600)) +
+  geom_line(data = na.omit(soundings), aes(height, spd)) +
   scale_color_viridis_c(name = "Horas desde las 11UTC") +
   coord_flip(xlim = c(0, 2000), ylim = c(0, 15))
 ```
@@ -280,7 +280,7 @@ radial_wind[, .(mean.spd = mean(spd), sd = sd(spd)), by = .(height)] %>%
   ggplot(aes(height + 119, mean.spd)) +
   geom_ribbon(aes(ymin = mean.spd - sd, ymax = mean.spd + sd), alpha = 0.2) +
   geom_line(color = "#FD8002") +
-  geom_line(data = na.omit(soundings), aes(height, windspd/10), color = "#367DB7") +
+  geom_line(data = na.omit(soundings), aes(height,spd), color = "#367DB7") +
   coord_flip(xlim = c(0, 2000), ylim = c(0, 15)) +
   labs(x = "spd", y = "height")
 ```
