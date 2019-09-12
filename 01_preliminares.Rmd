@@ -138,7 +138,7 @@ Queremos ver que pasa cuando los datos tienen huecos. Hasta ahora la función ti
 
 ```{r}
 na.omit(radial_wind) %>% 
-  .[elevation == unique(elevation)[3] & range < 50000] %>% 
+  .[elevation == unique(elevation)[3] & range < 10000] %>% 
   ggplot(aes(azimuth, range)) +
   geom_point(aes(color =  Vda, size = range)) +
   scale_color_divergent() +
@@ -253,7 +253,7 @@ radial_wind <- lapply(files, function(f) {
   date_time <- ymd_hms(str_extract(basename(f), "\\d{8}_\\d{6}"))
   
   VAD <- with(temp, vad_fit(Vda, azimuth, range, elevation)) %>% 
-    # vad_regrid(layer_width = 100, ht.out = seq(100, 2000, 100)) %>% 
+    vad_regrid(layer_width = 100, ht.out = seq(100, 2000, 100)) %>% 
     setDT() %>% 
     .[, date.time := date_time] %>% 
     .[, spd := sqrt(u^2 + v^2)]

@@ -36,9 +36,9 @@ ggplot(one_elevation, aes(azimuth, range)) +
 
 # Busquemos el mejor tiempo para usar en las pruebas menores.
 
-files <- Sys.glob("/mnt/Data/VAD/RMA4/cfrad.20181*_120*.nc")
+files <- Sys.glob("/mnt/Data/VAD/RMA4/cfrad.20181*_*.nc")
 
-soundings <- fread("data/soundings_87155.csv")
+soundings <- fread("data/soundings_wyoming_87155.csv")
 soundings[, time := as_datetime(time)]
 
 for (i in seq_along(files)) { 
@@ -51,7 +51,7 @@ for (i in seq_along(files)) {
   
   soundings[time == date_time] %>% 
     na.omit() %>% 
-    ggplot(aes(windspd/10, height)) +
+    ggplot(aes(spd, height)) +
     geom_path() +
     geom_point(data = VAD, aes(sqrt(u^2 + v^2), height + 119, color = factor(elevation))) +
     coord_cartesian(ylim = c(0, 2000), xlim = c(0, 25))
