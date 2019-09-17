@@ -39,8 +39,8 @@ with_QC <- with(radial_wind, vad_fit(CVRAD, azimuth, range, elevation, r2 = 0.5)
   setDT() %>% 
   .[, `:=`(spd = sqrt(u^2 + v^2), QC = "QC")]
 
-radial_wind <- ReadNetCDF("../VAD/RMA4/cfrad.20181121_105940.0000_to_20181121_110221.0000_RMA4_0200_02.nc", vars = c("VRAD", "azimuth", "elevation"))
-without_QC <- with(radial_wind, vad_fit(VRAD, azimuth, range, elevation, r2 = 0.5)) %>% 
+radial_wind <- ReadNetCDF("../VAD/RMA4/cfrad.20181121_110832.0000_to_20181121_111113.0000_RMA4_0200_02.nc", vars = c("Vda", "azimuth", "elevation"))
+without_QC <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation, r2 = 0.5)) %>% 
   setDT() %>% 
   .[, `:=`(spd = sqrt(u^2 + v^2), QC = "no QC")]
 
@@ -67,13 +67,30 @@ soundings <- fread("data/soundings_wyoming_87155.csv") %>%
 
 VAD %>% 
   copy() %>% 
-  # .[r2 > 0.9] %>%
-  .[, vad_regrid(.SD, layer_width = 100, ht.out = seq(100, 2000, 50)), by = .(QC)] %>% 
+  .[r2 > 0.8] %>%
+  # .[elevation %between% c(0, 1)] %>% 
+  .[, vad_regrid(.SD, layer_width = 50, ht.out = seq(100, 2000, 20)), by = .(QC)] %>% 
   ggplot(aes(height +119, sqrt(u^2 + v^2))) +
   # geom_ribbon(aes(ymin = mean.spd - sd, ymax = mean.spd + sd), alpha = 0.2) +
   geom_line(aes(color = QC)) +
   geom_point(aes(color = QC)) +
   geom_line(data = na.omit(soundings), aes(height, spd)) +
+  geom_point(data = na.omit(soundings), aes(height, spd)) +
+  coord_flip(ylim = c(0, 25))
+```
+
+```{r}
+VAD %>% 
+  copy() %>% 
+  .[r2 > 0.8] %>%
+  # .[elevation %between% c(0, 1)] %>% 
+  .[, vad_regrid(.SD, layer_width = 50, ht.out = seq(100, 2000, 20)), by = .(QC)] %>% 
+  ggplot(aes(height +119, 180+atan2(u, v)*180/pi)) +
+  # geom_ribbon(aes(ymin = mean.spd - sd, ymax = mean.spd + sd), alpha = 0.2) +
+  # geom_line(aes(color = QC)) +
+  geom_point(aes(color = QC)) +
+  # geom_line(data = na.omit(soundings), aes(height, dir)) +
+  geom_point(data = na.omit(soundings), aes(height, dir)) +
   coord_flip()
 ```
 
