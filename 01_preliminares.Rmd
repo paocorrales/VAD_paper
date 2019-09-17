@@ -138,7 +138,7 @@ Queremos ver que pasa cuando los datos tienen huecos. Hasta ahora la función ti
 
 ```{r}
 na.omit(radial_wind) %>% 
-  .[elevation == unique(elevation)[3] & range < 10000] %>% 
+  .[elevation == unique(elevation)[3] & range < 50000] %>% 
   ggplot(aes(azimuth, range)) +
   geom_point(aes(color =  Vda, size = range)) +
   scale_color_divergent() +
