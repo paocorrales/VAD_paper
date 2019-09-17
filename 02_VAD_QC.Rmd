@@ -1,0 +1,79 @@
+---
+title: "02_VAD_QC"
+author: "Pao"
+date: "9/17/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(rvad)
+library(ggplot2)
+library(data.table)
+library(metR)
+library(dplyr)
+library(patchwork)
+library(stringr)
+library(lubridate)
+```
+
+## Comparación de casos con y sin control de calidad. 
+
+```{r}
+radial_wind <- ReadNetCDF("../VAD/RMA4/QC/cfrad.20181121_105940.RMA4_0200_02.nc", vars = c("CVRAD", "azimuth", "elevation"))
+
+na.omit(radial_wind) %>% 
+  ggplot(aes(azimuth, range)) +
+  geom_point(aes(color = CVRAD, size = range)) +
+  scale_size_area(max_size = 0.5) +
+  scale_color_divergent() +
+  coord_polar() +
+  facet_wrap(~elevation, ncol = 4)
+ 
+```
+
+```{r}
+radial_wind <- ReadNetCDF("../VAD/RMA4/QC/cfrad.20181121_105940.RMA4_0200_02.nc", vars = c("CVRAD", "azimuth", "elevation"))
+with_QC <- with(radial_wind, vad_fit(CVRAD, azimuth, range, elevation, r2 = 0.5)) %>% 
+  setDT() %>% 
+  .[, `:=`(spd = sqrt(u^2 + v^2), QC = "QC")]
+
+radial_wind <- ReadNetCDF("../VAD/RMA4/cfrad.20181121_105940.0000_to_20181121_110221.0000_RMA4_0200_02.nc", vars = c("VRAD", "azimuth", "elevation"))
+without_QC <- with(radial_wind, vad_fit(VRAD, azimuth, range, elevation, r2 = 0.5)) %>% 
+  setDT() %>% 
+  .[, `:=`(spd = sqrt(u^2 + v^2), QC = "no QC")]
+
+VAD <- rbind(with_QC, without_QC)
+
+VAD %>% 
+  ggplot(aes(spd, height)) +
+  geom_point(aes(color = factor(elevation))) +
+  coord_cartesian(xlim = c(0, 15), ylim = c(0, 2000)) +
+  facet_wrap(~QC) +
+VAD %>%   
+  ggplot(aes(spd, height)) +
+  geom_point(aes(color = r2)) +
+  coord_cartesian(xlim = c(0, 15), ylim = c(0, 2000)) +
+  facet_wrap(~QC) +
+  plot_layout(ncol = 1)
+  
+```
+
+```{r}
+soundings <- fread("data/soundings_wyoming_87155.csv") %>% 
+  .[, time := as_datetime(time)] %>% 
+  .[time  == as_datetime("20181121120000")]
+
+VAD %>% 
+  copy() %>% 
+  # .[r2 > 0.9] %>%
+  .[, vad_regrid(.SD, layer_width = 100, ht.out = seq(100, 2000, 50)), by = .(QC)] %>% 
+  ggplot(aes(height +119, sqrt(u^2 + v^2))) +
+  # geom_ribbon(aes(ymin = mean.spd - sd, ymax = mean.spd + sd), alpha = 0.2) +
+  geom_line(aes(color = QC)) +
+  geom_point(aes(color = QC)) +
+  geom_line(data = na.omit(soundings), aes(height, spd)) +
+  coord_flip()
+```
+
