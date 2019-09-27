@@ -13,6 +13,9 @@ library(ggplot2)
 library(data.table)
 library(metR)
 library(dplyr)
+library(patchwork)
+library(stringr)
+library(lubridate)
 ```
 
 ## "Mejores" casos para estudiar el skill del algoritmo
@@ -21,11 +24,11 @@ Comparando rápidamente el perfil que calcula el VAD (usando la configuración p
 
 * 20181121_12
 
-![Posible caso 1](/mnt/Data/VAD/RMA4/fig/vad_20181121_120124.png)
+![Posible caso 1](/mnt/Data/VAD/RMA4/fig/vad_20181121_110832.png)
 
 * 20181229_12
 
-![Posible caso 2](/mnt/Data/VAD/RMA4/fig/vad_20181229_115748.png)
+![Posible caso 2](/mnt/Data/VAD/RMA4/fig/vad_20181229_110448.png)
 
 Me voy a quedar con el segundo para hacer las pruebas.
 
@@ -33,51 +36,100 @@ Me voy a quedar con el segundo para hacer las pruebas.
 path <- "../VAD/RMA4/cfrad.20181121_120124.0000_to_20181121_120412.0000_RMA4_0200_02.nc"
 
 radial_wind <- ReadNetCDF(path, vars = c("Vda", "azimuth", "elevation"))
-VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation))
-setDT(VAD)
+VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation)) %>%
+  setDT()
 ```
 
 ## 1. Efecto del tamaño del volumen escaneado
 
 Quiero ver cual es el efecto que genera el aumento de volumen con el rango. Si el campo de viento fuera homogeneo, no tendríamos problemas porque por más que incluyamos observaciones en rangos muy grandes que representan un volumen de atmósfera muy grande el viento sería siempre el mismo.
 
+Idea 1: La correlación entre la magnitud de la velocidad y el rango es distinta dependiendo de la curvatura del perfil. En el máximo del jet espero que la relación entre las dos variables sea indirecta ya que a mayor rango estoy censando un volumen de atmósfera mayor y entonces el máximo de viento se *suaviza*. Si el perfil es homogeneo con la altura la pendiente será nula. Pero el perfil no es tan simple, hay regiones donde la curvatura es positiva por ejemplo.
+
+En la primera figura se muestra la relación entre el rango y la velocidad para distintas capas de atmósfera de 200 metros de espesor y en colores las distintas elevaciones. Y a partir de la capa (500,700] y hasta aproximadamente (1300,1500] la relación es algo negativa. Si bien esto es lo esperado, no se ve super claramente y hay variaciones en los distintos ángulos de elevación. Además si calculamos la correlación entre las dos variables para cada capa _sin tener en cuenta el ángulo de elevación_ en algunos casos esta tiene signo contrario! Esto imagino que es por que el campo de viento no es tan homogeneo como debería.
+
+Idea 1bis: A altura constante cada ángulo de levación escanea en un rango distinto y además el volumen escaneado es directamente proporcional al rango. La velocidad medida en cada volumen entonces será menor para rangos mayores?
 
 ```{r}
 VAD[, spd := sqrt(u^2 + v^2)]
 
-na.omit(VAD) %>% 
-  .[, FitLm(spd, range = range/1000, se = TRUE), by = cut_width(height + 119, 100)] %>% 
-  .[term == "range"] %>% 
-  ggplot(aes(estimate, cut_width)) +
-  geom_point(aes(color = df)) +
-  geom_errorbarh(aes(xmin = estimate - std.error*2, xmax = estimate + std.error*2))
+VAD[, height_cut := cut_width(height, 200)] %>%
+  # .[, spd := sqrt(u^2 + v^2)] %>%
+  na.omit() %>%
+  ggplot(aes(spd, range)) +
+  geom_point(aes(color = factor(elevation))) +
+  geom_smooth(method = lm, aes(group = factor(elevation), color = factor(elevation))) +
+  scale_color_discrete(name = "Elevación") +
+  facet_wrap(~height_cut, scales = "free")
 
-
-VAD %>% 
-  ggplot(aes(sqrt(u^2 + v^2), range)) +
-  geom_point(aes(color = factor(elevation)))
 ```
+
+Si analizamos el valor de la pendiente en cada capa de atmósfera y cada ángulo de elevación se puede ver que hay capas donde todos o casi todos los ángulos de elevación muestran una relación inversamente proporcional entre el rango y la velocidad. Esto es así a partir de la capa (500,700]. Pero los valores de pendiente más negativa  en (1100,1300] no coinciden con el máximo del jet que ocurre en ~500 metros.
+
+```{r}
+na.omit(VAD) %>%
+  .[, range := range/1000] %>%
+  .[, spd := sqrt(u^2 + v^2)] %>%
+  .[, FitLm(spd, range, se = TRUE), by = .(elevation, cut_width(height, 200))] %>%
+  .[term == "range"] %>%
+  ggplot(aes(estimate, cut_width)) +
+    geom_vline(xintercept = 0, color = "darkgray") +
+  geom_point(aes(color = factor(elevation), size = df)) +
+  geom_path(aes(group = factor(elevation), color = factor(elevation))) +
+  scale_color_discrete(name = "Elevación") +
+  scale_size(name = "Grados de \nlibertad") +
+  labs("Relación entre la velocidad y la distancia", x = "Pendiente (m/s*km)", y = "Capas (m)") +
+  # geom_errorbarh(aes(xmin = estimate - std.error*2, xmax = estimate + std.error*2)) +
+  theme(legend.position = "bottom") +
+
+vad_regrid(VAD, layer_width = 300, ht.out = seq(200, 2000, 100)) %>%
+  setDT() %>%
+  .[, V := sqrt(u^2 + v^2)] %>%
+  .[, dV := rvad:::error_prop(u, v, u_std.error, v_std.error)] %>%
+  ggplot(aes(height, V)) +
+  geom_point() +
+  geom_line() +
+  geom_point(data = VAD, aes(height, sqrt(u^2 + v^2), color = factor(elevation))) +
+  geom_ribbon(aes(ymin = V - 2*dV, ymax = V + 2*dV), alpha = 0.2) +
+  coord_flip(xlim = c(200, 2000)) +
+  theme(legend.position = "bottom")
+```
+
+Idea 2: A rango constante, el volumen escaneado es mayor para ángulos de elevación mayores. Eso podría implicar que la velocidad medida es menor para elevaciones mayores?
+
+El siguiente gráfico muestra la velocidad en función de cada elevación y en color la altura de esa observación, cada cuadro corresponde a un intervalo de rango constante. Por el gráfico parece haber una relación inversa entre el ángulo de elevación y la velocidad. Pero al mismo tiempo hay que tener en cuenta que la velocidad varía con la altura y que ángulos mayores sensan alturas mayores (siempre manteniendo en rango constante) y como en este caso la velocidad disminuye con la altura luego del jet, la relación que se observa podría ser por eso.
+
+```{r}
+na.omit(VAD) %>%
+  .[, range_cut := cut_width(range, 5000)] %>%
+  .[, spd := sqrt(u^2 + v^2)] %>%
+  .[range < 62500] %>%
+  ggplot(aes(spd, elevation)) +
+  geom_point(aes(color =  height)) +
+  facet_wrap(~range_cut, scale = "free")
+```
+
 
 ```{r}
 
-na.omit(VAD) %>% 
-.[, .N, by = .(range = cut_width(range, 5000), 
-               height = cut_width(height+119, 100))] %>% 
+na.omit(VAD) %>%
+.[, .N, by = .(range = cut_width(range, 5000),
+               height = cut_width(height+119, 100))] %>%
   ggplot(aes(range, height)) +
   geom_point(aes(color = N))
 
-na.omit(VAD) %>% 
-.[, (range.interval := cut_width(range, 5000), 
+na.omit(VAD) %>%
+.[, (range.interval := cut_width(range, 5000),
                height.interval := cut_width(height+119, 100))]
 
 
-VAD %>% 
-  copy() %>% 
-  .[, range := range/1000] %>% 
-  .[, range_cut := cut_width(range, 5)] %>% 
-  .[, vad_regrid(.SD, layer_width = 700, ht.out = seq(200, 2000, by = 100)), 
-    by = .(range_cut)] %>% 
-  .[, .SD[mean(is.na(u)) < 0.8], by = .(range_cut)] %>% 
+VAD %>%
+  copy() %>%
+  .[, range := range/1000] %>%
+  .[, range_cut := cut_width(range, 5)] %>%
+  .[, vad_regrid(.SD, layer_width = 700, ht.out = seq(200, 2000, by = 100)),
+    by = .(range_cut)] %>%
+  .[, .SD[mean(is.na(u)) < 0.8], by = .(range_cut)] %>%
   ggplot(aes(height, sqrt(v^2))) +
   geom_line(aes(color = range_cut)) +
   geom_point(aes(color = range_cut)) +
@@ -86,18 +138,157 @@ VAD %>%
 
 ```
 
-Viento radial:
+Si graficamos  el perfil que genera el `vad_regrid()` para cada rango, lo esperable es que para rangos más lejanos el máximo de viento en el jet sea cada vez menor pues el volumen de aire escaneado aumenta y entonces mayores velocidades *se promedian* con velocidades menores por encima y por abajo del máximo. No ocurre eso sino todo lo contrario.
 
-$ Vr =  v \cos(\theta) \cos(\phi) + u \cos(\theta) \sin(\phi) - w \sin(\theta)$
+## 2. Efecto del tamaño del gap
+
+Queremos ver que pasa cuando los datos tienen huecos. Hasta ahora la función tienen un argumento para controlar el gap máximo aceptado que por default es 30 grados según algún paper que encontré. La idea es a partir del mismo volumen quitarle datos para generar distintos gaps y ver como eso afecta el perfil final. El campo de viento para la elevación 2.99 grados es la siguiente.
 
 ```{r}
-VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation))
-
-perfil <- vad_regrid(VAD, layer_width = 100, resolution = 50)
-
-field <- radial_wind[, c("range", "elevation", "azimuth")] %>% 
-  .[, height := beam_propagation(range, elevation)["ht"]] %>% 
-  .[, c("utmp", "vtmp") := .(approx(perfil$height, perfil$u, height)["y"],
-                             approx(perfil$height, perfil$v, height)["y"])]
+na.omit(radial_wind) %>%
+  .[elevation == unique(elevation)[3] & range < 50000] %>%
+  ggplot(aes(azimuth, range)) +
+  geom_point(aes(color =  Vda, size = range)) +
+  scale_color_divergent() +
+  scale_size_area(max_size = 2) +
+  coord_polar()
 ```
 
+```{r}
+
+gaps <- seq(0, 180, 10)
+
+elev_gap <-  lapply(gaps, function(i) {
+  copy(radial_wind) %>%
+    .[azimuth %between% c(0, i), Vda := NA] %>%
+    .[, gap := i]
+  }) %>%
+  rbindlist()
+
+na.omit(elev_gap) %>%
+  .[gap %in% c(10, 30, 60, 90, 120, 150, 180)] %>%
+  .[elevation == unique(elevation)[3] & range < 50000] %>%
+  ggplot(aes(azimuth, range)) +
+  geom_point(aes(color =  Vda, size = range)) +
+  scale_color_divergent() +
+  scale_size_area(max_size = 2) +
+  coord_polar() +
+  facet_wrap(~gap)
+```
+
+```{r}
+vad_gap <- elev_gap %>%
+  .[, vad_fit(Vda, azimuth, range, elevation, max_consecutive_na = 200, max_na = 0.6), by = .(gap)]
+
+na.omit(vad_gap) %>%
+  ggplot(aes(height, sqrt(u^2 + v^2))) +
+  geom_point(aes(color = factor(elevation))) +
+  coord_flip() +
+  facet_wrap(~gap)
+```
+
+```{r}
+regrid_gap <- vad_gap[, vad_regrid(.SD, layer_width = 100, ht.out = seq(100, 2000, 100)), by = .(gap)] %>%
+  .[, spd := sqrt(u^2 + v^2)]
+
+
+regrid_gap[gap == 0, .(height, control = spd)] %>%
+  .[regrid_gap, on = c("height")] %>%
+  ggplot(aes(height, spd - control)) +
+  # geom_point(aes(color = factor(gap))) +
+  geom_line(aes(color = factor(gap))) +
+  coord_flip()
+```
+
+
+## 3. Promedio temporal del caso seleccionado
+
+Usar sondeos para validar los perfiles que general el VAD es complejo porque los sondeos tienen poca resolucón vertical y además no son instantaneos (puede demorar hasta una hora llegar a la tropopausa)
+
+### Caso 1
+```{r}
+# Hay que leer varios tiempos juntos, calcular el VAD y promediar eso.
+
+files <- Sys.glob("/mnt/Data/VAD/RMA4/cfrad.20181121_11*")
+
+radial_wind <- lapply(files, function(f) {
+  temp <- ReadNetCDF(f, vars = c("Vda", "azimuth", "elevation"))
+  date_time <- ymd_hms(str_extract(basename(f), "\\d{8}_\\d{6}"))
+
+  VAD <- with(temp, vad_fit(Vda, azimuth, range, elevation)) %>%
+    vad_regrid(layer_width = 100, ht.out = seq(100, 2000, 50)) %>%
+    setDT() %>%
+    .[, date.time := date_time] %>%
+    .[, spd := sqrt(u^2 + v^2)]
+  }) %>%
+rbindlist()  
+
+soundings <- fread("data/soundings_wyoming_87155.csv") %>%
+  .[, time := as_datetime(time)] %>%
+  .[time  == as_datetime("20181121120000")]
+```
+
+
+```{r}
+radial_wind[, time := interval(date.time[1], date.time)] %>%
+  ggplot(aes(height  + 119, spd)) +
+  geom_line(aes(group = date.time, color = as.numeric(time)/3600)) +
+  geom_line(data = na.omit(soundings), aes(height, spd)) +
+  scale_color_viridis_c(name = "Horas desde las 11UTC") +
+  coord_flip(xlim = c(0, 2000), ylim = c(0, 15))
+```
+
+```{r}
+radial_wind[, .(mean.spd = mean(spd), sd = sd(spd)), by = .(height)] %>%
+  ggplot(aes(height + 119, mean.spd)) +
+  geom_ribbon(aes(ymin = mean.spd - sd, ymax = mean.spd + sd), alpha = 0.2) +
+  geom_line(color = "#FD8002") +
+  geom_line(data = na.omit(soundings), aes(height, spd), color = "#367DB7") +
+  coord_flip(xlim = c(0, 2000), ylim = c(0, 15)) +
+  labs(x = "spd", y = "height")
+```
+
+
+### Caso 2
+
+```{r}
+# Hay que leer varios tiempos juntos, calcular el VAD y promediar eso.
+
+files <- Sys.glob("/mnt/Data/VAD/RMA4/cfrad.20181229_11*")
+
+radial_wind <- lapply(files, function(f) {
+  temp <- ReadNetCDF(f, vars = c("Vda", "azimuth", "elevation"))
+  date_time <- ymd_hms(str_extract(basename(f), "\\d{8}_\\d{6}"))
+
+  VAD <- with(temp, vad_fit(Vda, azimuth, range, elevation)) %>%
+    vad_regrid(layer_width = 100, ht.out = seq(100, 2000, 100)) %>%
+    setDT() %>%
+    .[, date.time := date_time] %>%
+    .[, spd := sqrt(u^2 + v^2)]
+  }) %>%
+rbindlist()  
+
+soundings <- fread("data/soundings_wyoming_87155.csv") %>%
+  .[, time := as_datetime(time)] %>%
+  .[time  == as_datetime("20181229120000")]
+```
+
+
+```{r}
+radial_wind[, time := interval(date.time[1], date.time)] %>%
+  ggplot(aes(height  + 119, spd)) +
+  geom_line(aes(group = date.time, color = as.numeric(time)/3600)) +
+  geom_line(data = na.omit(soundings), aes(height, spd)) +
+  scale_color_viridis_c(name = "Horas desde las 11UTC") +
+  coord_flip(xlim = c(0, 2000), ylim = c(0, 15))
+```
+
+```{r}
+radial_wind[, .(mean.spd = mean(spd), sd = sd(spd)), by = .(height)] %>%
+  ggplot(aes(height + 119, mean.spd)) +
+  geom_ribbon(aes(ymin = mean.spd - sd, ymax = mean.spd + sd), alpha = 0.2) +
+  geom_line(color = "#FD8002") +
+  geom_line(data = na.omit(soundings), aes(height,spd), color = "#367DB7") +
+  coord_flip(xlim = c(0, 2000), ylim = c(0, 15)) +
+  labs(x = "spd", y = "height")
+```
