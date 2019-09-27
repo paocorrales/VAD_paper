@@ -46,7 +46,7 @@ Quiero ver cual es el efecto que genera el aumento de volumen con el rango. Si e
 VAD[, spd := sqrt(u^2 + v^2)]
 
 na.omit(VAD) %>% 
-  .[, FitLm(spd, range, se = TRUE), by = cut_width(height, 100)] %>% 
+  .[, FitLm(spd, range = range/1000, se = TRUE), by = cut_width(height + 119, 100)] %>% 
   .[term == "range"] %>% 
   ggplot(aes(estimate, cut_width)) +
   geom_point(aes(color = df)) +
@@ -59,56 +59,45 @@ VAD %>%
 ```
 
 ```{r}
+
 na.omit(VAD) %>% 
-  .[, .N, by = .(range = cut_width(range, 5000), 
-                 height = cut_width(height, 100))] %>% 
+.[, .N, by = .(range = cut_width(range, 5000), 
+               height = cut_width(height+119, 100))] %>% 
   ggplot(aes(range, height)) +
   geom_point(aes(color = N))
 
 na.omit(VAD) %>% 
+.[, (range.interval := cut_width(range, 5000), 
+               height.interval := cut_width(height+119, 100))]
+
+
+VAD %>% 
   copy() %>% 
-  .[, range_cut := cut_width(range, 5000)] %>% 
-  .[, vad_regrid(.SD, layer_width = 200, ht.out = seq(200, 2000, 100)), 
+  .[, range := range/1000] %>% 
+  .[, range_cut := cut_width(range, 5)] %>% 
+  .[, vad_regrid(.SD, layer_width = 700, ht.out = seq(200, 2000, by = 100)), 
     by = .(range_cut)] %>% 
-  ggplot(aes(height, sqrt(u^2 + v^2))) +
+  .[, .SD[mean(is.na(u)) < 0.8], by = .(range_cut)] %>% 
+  ggplot(aes(height, sqrt(v^2))) +
   geom_line(aes(color = range_cut)) +
   geom_point(aes(color = range_cut)) +
   scale_color_viridis_d() +
   coord_flip()
 
 ```
+
+Viento radial:
 
 $ Vr =  v \cos(\theta) \cos(\phi) + u \cos(\theta) \sin(\phi) - w \sin(\theta)$
 
 ```{r}
-perfil <- vad_regrid(VAD, layer)
-radial_wind[, height := beam_propagation(range, elevation)["ht"]] %>% 
-  .[, c("u", "v") := vad_regrid(VAD, layer_width = 100, ht.out = height)[c("u", "v")]]
+VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation))
 
-radial_wind[, vr := v*cos(elevation*pi/1800)*cos(azimuth*pi/180) + u*cos(elevation*pi/180)*sin(azimuth*pi/180)]
-  
-radial_wind %>% 
-  .[elevation ==  elevation[1]] %>% 
-  ggplot(aes(azimuth, range)) +
-  geom_point(aes(color = vr - Vda)) +
-  scale_color_divergent() +
-  coord_polar()
+perfil <- vad_regrid(VAD, layer_width = 100, resolution = 50)
 
-```
-
-```{r}
-vr_vad <- with(radial_wind, vad_fit(vr, azimuth, range, elevation))
-
-setDT(vr_vad)
-na.omit(vr_vad) %>% 
-  copy() %>% 
-  .[, range_cut := cut_width(range, 10000)] %>% 
-  .[, vad_regrid(.SD, layer_width = 200, ht.out = seq(200, 2000, 100)), 
-    by = .(range_cut)] %>% 
-  ggplot(aes(height, sqrt(u^2 + v^2))) +
-  geom_line(aes(color = range_cut)) +
-  geom_point(aes(color = range_cut)) +
-  scale_color_viridis_d() +
-  coord_flip()
+field <- radial_wind[, c("range", "elevation", "azimuth")] %>% 
+  .[, height := beam_propagation(range, elevation)["ht"]] %>% 
+  .[, c("utmp", "vtmp") := .(approx(perfil$height, perfil$u, height)["y"],
+                             approx(perfil$height, perfil$v, height)["y"])]
 ```
 
