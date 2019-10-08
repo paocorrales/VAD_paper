@@ -1,0 +1,83 @@
+---
+title: "03_valicacion"
+author: "Pao"
+date: "10/8/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(rvad)
+library(ggplot2)
+library(data.table)
+library(metR)
+library(dplyr)
+library(patchwork)
+library(stringr)
+library(lubridate)
+```
+
+## 1. Efecto del tamaño del volumen escaneado
+
+Vamos a estudiar el efecto del volumen escaneado pero ahora en vez de usar el rango como variable que representa ese efecto vamos a evaluar el alto del volumen (perpendicular al suelo). 
+
+```{r}
+radial_wind <- ReadNetCDF("../VAD/RMA4/cfrad.20181121_105940.0000_to_20181121_110221.0000_RMA4_0200_02.nc", vars = c("Vda", "azimuth", "elevation")) %>% 
+  setDT()
+```
+
+
+```{r}
+VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation, r2 = 0.8, outlier_threshold = 3)) %>% 
+  setDT()
+
+VAD %>% 
+  .[, spd := sqrt(u^2 + v^2)] %>% 
+  .[, `:=`(elev_inf = elevation - 0.5,
+         elev_sup = elevation + 0.5,
+         range_ini = range - 75,
+         range_fin = range + 75)] %>% 
+  .[, `:=`(hg_inf = beam_propagation(range_ini, elev_inf)[["ht"]],
+           hg_sup = beam_propagation(range_fin, elev_sup)[["ht"]])] %>% 
+  .[, dz := hg_sup - hg_inf]
+```
+
+```{r}
+VAD[, height_cut := cut_width(height, 200)] %>% 
+  na.omit() %>% 
+  ggplot(aes(spd, dz)) +
+  geom_point(aes(color = factor(elevation))) +
+  geom_smooth(method = lm) +
+  scale_color_discrete(name = "Elevación") +
+  facet_wrap(~height_cut, scales = "free")
+
+```
+
+```{r}
+na.omit(VAD) %>% 
+  .[, FitLm(spd, dz, se = TRUE), by = .(elevation, cut_width(height, 200))] %>% 
+  .[term == "dz"] %>% 
+  ggplot(aes(estimate, cut_width)) +
+    geom_vline(xintercept = 0, color = "darkgray") +
+  geom_point(aes(color = factor(elevation), size = df)) +
+  geom_path(aes(group = factor(elevation), color = factor(elevation))) +
+  scale_color_discrete(name = "Elevación") +
+  scale_size(name = "Grados de \nlibertad") +
+  labs("Relación entre la velocidad y la distancia", x = "Pendiente (m/s*km)", y = "Capas (m)") +
+  # geom_errorbarh(aes(xmin = estimate - std.error*2, xmax = estimate + std.error*2)) +
+  theme(legend.position = "bottom")
+
+na.omit(VAD) %>% 
+  .[, FitLm(spd, dz, se = TRUE), by = .(cut_width(height, 200))] %>% 
+  .[term == "dz"] %>% 
+  ggplot(aes(estimate, cut_width)) +
+  geom_vline(xintercept = 0, color = "darkgray") +
+  geom_point(aes(size = df)) +
+  geom_path() +
+  scale_size(name = "Grados de \nlibertad") +
+  labs("Relación entre la velocidad y la distancia", x = "Pendiente (m/s*km)", y = "Capas (m)") +
+  # geom_errorbarh(aes(xmin = estimate - std.error*2, xmax = estimate + std.error*2)) +
+  theme(legend.position = "bottom")
+```
+
