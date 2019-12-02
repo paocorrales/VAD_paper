@@ -36,7 +36,7 @@ ggplot(one_elevation, aes(azimuth, range)) +
 
 # Busquemos el mejor tiempo para usar en las pruebas menores.
 
-files <- Sys.glob("../VAD/RMA4/cfrad.20181*_120*.nc")
+files <- Sys.glob("../VAD/RMA4/cfrad.20181*_110*.nc")
 
 soundings <- fread("data/soundings_wyoming_87155.csv")
 soundings[, time := as_datetime(time)]
@@ -44,7 +44,7 @@ soundings[, time := as_datetime(time)]
 for (i in seq_along(files)) {
   # Leo el volumen y calculo el VAD
   radial_wind <- ReadNetCDF(files[i], vars = c("Vda", "azimuth", "elevation"))
-  VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation))
+  VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation, outlier_threshold = 2.5))
 
   # Leo el sondeo
   date_time <- ymd_hm(paste0(substr(basename(files[i]), 7, 14), " 12:00"))

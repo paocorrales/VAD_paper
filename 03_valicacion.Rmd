@@ -6,7 +6,8 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,
+                      cache = TRUE)
 
 library(rvad)
 library(ggplot2)
@@ -16,6 +17,8 @@ library(dplyr)
 library(patchwork)
 library(stringr)
 library(lubridate)
+library(circular)
+source("test_VAD.R")
 ```
 
 ## 1. Efecto del tamaño del volumen escaneado
@@ -29,7 +32,7 @@ radial_wind <- ReadNetCDF("../VAD/RMA4/cfrad.20181121_105940.0000_to_20181121_11
 
 
 ```{r}
-VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation, r2 = 0.8, outlier_threshold = 3)) %>% 
+VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation, r2 = 0.8, outlier_threshold = 2.5)) %>% 
   setDT()
 
 VAD %>% 
@@ -64,7 +67,7 @@ na.omit(VAD) %>%
   geom_path(aes(group = factor(elevation), color = factor(elevation))) +
   scale_color_discrete(name = "Elevación") +
   scale_size(name = "Grados de \nlibertad") +
-  labs("Relación entre la velocidad y la distancia", x = "Pendiente (m/s*km)", y = "Capas (m)") +
+  labs(title = "Relación entre la velocidad y la distancia", x = "Pendiente (m/s*km)", y = "Capas (m)") +
   # geom_errorbarh(aes(xmin = estimate - std.error*2, xmax = estimate + std.error*2)) +
   theme(legend.position = "bottom")
 
@@ -76,8 +79,246 @@ na.omit(VAD) %>%
   geom_point(aes(size = df)) +
   geom_path() +
   scale_size(name = "Grados de \nlibertad") +
-  labs("Relación entre la velocidad y la distancia", x = "Pendiente (m/s*km)", y = "Capas (m)") +
+  labs(title = "Relación entre la velocidad y la distancia", x = "Pendiente (m/s*km)", y = "Capas (m)") +
   # geom_errorbarh(aes(xmin = estimate - std.error*2, xmax = estimate + std.error*2)) +
   theme(legend.position = "bottom")
+```
+
+```{r, echo=FALSE}
+( VAD[height < 2000] %>% 
+  ggplot(aes(sqrt(u^2 + v^2), height)) +
+  geom_point(aes(fill = range), shape = 21) +
+  # ggnewscale::new_scale_color() +
+  geom_path(aes(color = factor(elevation))) +
+  scale_color_viridis_d() ) %>% 
+  plotly::ggplotly()
+```
+
+
+```{r}
+ring_fit2 <- function (ring, azimuth, elev, outlier_threshold = Inf) 
+{
+  nas <- is.na(ring)
+  if (sum(nas) == length(ring)) {
+    return(list(u = NA_real_, v = NA_real_, r2 = NA_real_, 
+                rmse = NA_real_))
+  }
+  n_outliers <- 1
+  while (n_outliers > 0) {
+    fit <- stats::lm.fit(cbind(1, cos(azimuth * pi/180), 
+                               sin(azimuth * pi/180))[!nas, , drop = FALSE], ring[!nas])
+    rmse <- stats::sd(fit$residuals)
+    outliers <- abs(fit$residuals) >= outlier_threshold * 
+      rmse
+    n_outliers <- sum(outliers)
+    # browser()   
+    ring[!nas][outliers] <- NA
+    # ring[!nas][outliers] <-  fit$fitted.values[outliers]
+    
+    # ring <- rvad:::ring_qc(ring, azimuth, max_na = 0.4)
+    nas <- is.na(ring)
+    if (sum(nas) == (length(ring) - 3) ) {
+      
+      return(list(u = NA_real_, v = NA_real_, r2 = NA_real_, 
+                  rmse = NA_real_))
+    }
+    
+  }
+  r2 <- 1 - stats::var(fit$residuals)/stats::var(ring[!nas])
+  coef_cos <- fit$coefficients[2]
+  coef_sin <- fit$coefficients[3]
+  v <- coef_cos/cos(elev * pi/180)
+  u <- coef_sin/cos(elev * pi/180)
+  
+  # list(azimuth, fit$fitted.values, fit$residuals)
+  
+  return(list(u = u, v = v, r2 = r2, rmse = rmse))
+}
+
+
+```
+
+
+```{r}
+radial_wind[range %in% c(6240, 6390) & elevation == unique(elevation)[4]] %>% 
+  ggplot(aes(azimuth, Vda)) +
+  geom_line(aes(color = factor(range))) +
+  # geom_smooth(aes(color = factor(range)), span = 0.5) +
+  labs(title = "VAD para dos anillos particularmente molestos",
+       subtitle = "Elevación = 4.57º",
+       color = "Rango")
+
+radial_wind[range %in% c(6240, 6390) & elevation == unique(elevation)[4]] %>% 
+  .[, ring_fit2(Vda, azimuth, elevation[1], outlier_threshold = 2), by = .(range)] %>% 
+  .[, V := metR::Mag(u, v)] %>% 
+  .[]
+
+```
+
+```{r eval=FALSE, include=FALSE}
+radial_wind %>% 
+  .[, rvad:::ring_fit(Vda, azimuth, elevation[1], outlier_threshold = 2), by = .(range, elevation)] %>% 
+  .[, V := metR::Mag(u, v)] %>% 
+  .[] %>% 
+  .[, height := beam_propagation(range, elevation)$ht] %>% 
+  .[] %>% 
+  na.omit() %>% 
+  # rvad:::plot.rvad_vad()
+  ggplot(aes(height, V)) +
+  geom_point() +
+  geom_smooth(span = 0.1) +
+  coord_flip()
+
+```
+
+```{r echo=FALSE}
+radial_wind %>% 
+  .[, vad_fit(Vda, azimuth, range, elevation, outlier_threshold = 3)] %>% 
+  as.data.table() -> VAD
+  
+
+VAD[, V := sqrt(u^2 + v^2)] %>% 
+  .[, ":="(dh = c(NA, diff(height)),
+           du = c(NA, diff(u)),
+           dv = c(NA, diff(v)),
+           dV = c(NA, diff(V))), 
+    by = .(elevation)] %>% 
+  .[, ":="(du_dh = du/dh,
+           dv_dh = dv/dh,
+           dV_dh = dV/dh)]
+
+VAD[height < 2000] %>% 
+  ggplot(aes(abs(dV_dh), height)) +
+  geom_path(aes(color = factor(elevation))) +
+  scale_color_viridis_d() +
+  labs(title = "Derivada de la magnitud del viento con la altura",
+       color = "Elevación")
+
+VAD[height < 2000] %>% 
+  ggplot(aes(V, height)) +
+  geom_point(aes(color = factor(elevation), size = abs(dV_dh))) +
+  scale_color_viridis_d() +
+  labs(title = "Estimación del viento en cada anillo",
+       color = "Elevación",
+       size = "abs(dV/dh)")
+```
+
+### Maquina de hacer VAD
+
+#### El caso de siempre: 20181121
+
+La función `test_VAD()` compara el perfil calculado con VAD con el sondeo a la misma hora y devuelve el rmse y bias para la magnitud y dirección de viento junto con la fracción de puntos que no son NA.
+
+```{r}
+parametros <- CJ(max_na = seq(0.1, 0.3, 0.1),
+                 max_consecutive_na = 30,
+                 r2_min = seq(0.7, 0.9, 0.05),
+                 outlier_threshold = c(Inf, 2, 2.5, 3))
+```
+
+En cada figura se incluye la variación de los 3 parámetros más importantes:
+
+- `max_na` en el eje x
+- `r2_min` en el eje y
+- `outlier_threshold` en cada subplot.
+
+Las 4 figuras correpsonden a las cuatro métricas: rmse y bias para la magnitud y para la dirección del viento. 
+
+Algunas conclusiones preliminares:
+
+- Cuando `outlier_threshold` es muy exigente, osea 2 o 2.5; el `r2_min` deja de tener tanta importancia porque los anillos que quedan luego de interar sobre el fit hasta conseguir "el mejor fit posible". Esto es particularmente cierto cuando el `max_na` también es muy exigente. El problema es que el perfil nos queda con muy pocos puntos (en comparación con el sondeo). 
+- En el caso de la dirección (asimiendo que calculé todo bien), cambiar los parámetros no cambia tanto el rmse y el bias o al menos no como en la magnitud del viento. 
+-  Sorprendentemente (o no...) los valores por defecto para cada parámetro (menos outlier_threshold) andan bastante bien. 
+    - `max_na = 0.2`
+    - `max_consecutive_na = 30`
+    - `r2_min = 0.8`
+    
+```{r echo=FALSE}
+soundings <- fread("data/soundings_wyoming_87155.csv") %>%
+  .[, time := as_datetime(time)]
+
+date <- ymd_hms("20181121120000")
+
+metricas_VAD <- parametros[, test_VAD(date, 
+                      with(radial_wind, vad_fit(Vda, azimuth, range, elevation, max_na = max_na, 
+                                       max_consecutive_na = max_consecutive_na, r2_min = r2_min,
+                                       outlier_threshold = outlier_threshold)), 
+                      soundings), by = c(colnames(parametros))]
+
+library(patchwork)
+
+metricas_VAD %>% 
+  ggplot(aes(max_na, r2_min)) +
+  geom_raster(aes(fill = rmse_spd)) +
+  scale_fill_viridis_c(direction = -1,
+                       limits = c(0.3, 1.5),
+                       breaks = seq(0.0, 1.5, 0.15),
+                       guide = guide_colorstrip(inside = TRUE, 
+                                                barwidth = 15)) +
+  geom_text(aes(label = as.character(round(frac_n, 2)))) +
+  facet_wrap(~outlier_threshold) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+
+metricas_VAD %>% 
+  ggplot(aes(max_na, r2_min)) +
+  geom_raster(aes(fill = bias_spd)) +
+  scale_fill_divergent(limits = c(-0.7, 0.7),
+                       breaks = round(seq(-0.6, 0.6, 0.1), 2),
+                       guide = guide_colorstrip(inside = TRUE, 
+                                                barwidth = 15)) +
+  geom_text(aes(label = as.character(round(frac_n, 2)))) +
+  facet_wrap(~outlier_threshold) +
+  theme_minimal() +
+  theme(legend.position = "bottom") 
+  
+metricas_VAD %>% 
+  ggplot(aes(max_na, r2_min)) +
+  geom_raster(aes(fill = rmse_dir)) +
+  scale_fill_viridis_c(direction = -1,
+                       limits = c(0, 10),
+                       breaks = seq(0.0, 10, 1),
+                       guide = guide_colorstrip(inside = TRUE, 
+                                                barwidth = 15)) +
+  geom_text(aes(label = as.character(round(frac_n, 2)))) +
+  facet_wrap(~outlier_threshold) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  
+metricas_VAD %>% 
+  ggplot(aes(max_na, r2_min)) +
+  geom_raster(aes(fill = bias_dir)) +
+  scale_fill_divergent(limits = c(-7, 7),
+                       breaks = round(seq(-6, 6, 1), 2),
+                       guide = guide_colorstrip(inside = TRUE, 
+                                                barwidth = 15)) +
+  geom_text(aes(label = as.character(round(frac_n, 2)))) +
+  facet_wrap(~outlier_threshold) +
+  theme_minimal() +
+  theme(legend.position = "bottom") 
+```
+
+#### Todos los casos que había identificado como buenos según la reflectividad
+
+```{r}
+files <- list.files("../VAD_datos/RMA4/casos/", pattern = ".nc", full.names = TRUE)
+
+radial_wind <- purrr::map(files, function(f) {
+    ReadNetCDF(f, vars = c("Vda", "azimuth", "elevation")) %>% 
+    .[, real_time := time[1]] 
+}) %>% 
+  rbindlist()
+
+parametros <- CJ(max_na = seq(0.1, 0.3, 0.1),
+                 max_consecutive_na = 30,
+                 r2_min = seq(0.7, 0.9, 0.05),
+                 outlier_threshold = c(Inf, 2, 2.5, 3),
+                 fecha_real = unique(radial_wind$real_time)[1:3])
+
+metricas_VAD <- parametros[, test_VAD(fecha_real, 
+                      with(radial_wind, vad_fit(Vda, azimuth, range, elevation, max_na = max_na, 
+                                       max_consecutive_na = max_consecutive_na, r2_min = r2_min,
+                                       outlier_threshold = outlier_threshold)), 
+                      soundings), by = c(colnames(parametros))]
 ```
 
