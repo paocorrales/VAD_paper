@@ -26,7 +26,7 @@ source("test_VAD.R")
 Vamos a estudiar el efecto del volumen escaneado pero ahora en vez de usar el rango como variable que representa ese efecto vamos a evaluar el alto del volumen (perpendicular al suelo). 
 
 ```{r}
-radial_wind <- ReadNetCDF("../VAD/RMA4/cfrad.20181121_105940.0000_to_20181121_110221.0000_RMA4_0200_02.nc", vars = c("Vda", "azimuth", "elevation")) %>% 
+radial_wind <- ReadNetCDF("../VAD_datos/RMA4/casos/cfrad.20181121_105940.0000_to_20181121_110221.0000_RMA4_0200_02.nc", vars = c("Vda", "azimuth", "elevation")) %>% 
   setDT()
 ```
 
