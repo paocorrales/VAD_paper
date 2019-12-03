@@ -1,0 +1,30 @@
+---
+title: "Ciclo Diario"
+author: "Pao"
+date: "12/3/2019"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      cache = TRUE)
+
+library(rvad)
+library(ggplot2)
+library(data.table)
+library(metR)
+library(dplyr)
+library(patchwork)
+library(stringr)
+library(lubridate)
+library(circular)
+source("test_VAD.R")
+```
+
+Más o menos a ojo decidí probar con el 21/11/2018
+
+```{r}
+
+```
+
