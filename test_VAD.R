@@ -5,14 +5,14 @@
 # - VAD: dataframe que devuelve vad_fit()
 # - sounding: dataframe con sondeos
 
-# soundings <- fread("data/soundings_wyoming_87155.csv") %>% 
+# soundings <- fread("data/soundings_wyoming_87155.csv") %>%
 #   .[, time := as_datetime(time)]
 # 
 # radial_wind <- ReadNetCDF("../VAD/RMA4/cfrad.20181121_105940.0000_to_20181121_110221.0000_RMA4_0200_02.nc", vars = c("Vda", "azimuth", "elevation"))
 # VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation, r2 = 0.8, outlier_threshold = 2.5)) %>% 
 #   setDT()
 # 
-# date <- ymd_hms("20181121120000")
+# real_time <- ymd_hms("20181227120000")
 
 test_VAD <- function(real_time, VAD, soundings) {
 
@@ -25,13 +25,14 @@ test_VAD <- function(real_time, VAD, soundings) {
                v = cos(dir*pi/180))]
   }
   # browser()
-  perfil <- vad_regrid(VAD, layer_width = 100, ht_out = sounding[, height-119]) %>% 
+  perfil <- vad_regrid(VAD, layer_width = 100, ht_out = sounding[, height - 119]) %>% 
     setDT() %>% 
     .[, ":="(height = height + 119,
              spd_vad = sqrt(u^2 + v^2),
              dir_vad = 180+atan2(u, v)*180/pi)] %>% 
     setnames(c("u", "v"), c("u_vad", "v_vad")) %>% 
-    .[sounding, on = "height"] 
+    .[height <= 2000] %>% 
+    sounding[., on = "height"] 
   
   nan_to_na <- function(x) { if (is.nan(x) | is.na(x)) NA_real_ else x }
   

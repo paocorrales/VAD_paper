@@ -26,7 +26,7 @@ source("test_VAD.R")
 Vamos a estudiar el efecto del volumen escaneado pero ahora en vez de usar el rango como variable que representa ese efecto vamos a evaluar el alto del volumen (perpendicular al suelo). 
 
 ```{r}
-radial_wind <- ReadNetCDF("../VAD/RMA4/cfrad.20181121_105940.0000_to_20181121_110221.0000_RMA4_0200_02.nc", vars = c("Vda", "azimuth", "elevation")) %>% 
+radial_wind <- ReadNetCDF("../VAD_datos/RMA4/casos/cfrad.20181121_105940.0000_to_20181121_110221.0000_RMA4_0200_02.nc", vars = c("Vda", "azimuth", "elevation")) %>% 
   setDT()
 ```
 
@@ -301,24 +301,62 @@ metricas_VAD %>%
 #### Todos los casos que había identificado como buenos según la reflectividad
 
 ```{r}
-files <- list.files("../VAD_datos/RMA4/casos/", pattern = ".nc", full.names = TRUE)
+# files <- list.files("../VAD_datos/RMA4/casos/", pattern = ".nc", full.names = TRUE)
+# 
+# radial_wind <- purrr::map(files, function(f) {
+#     ReadNetCDF(f, vars = c("Vda", "azimuth", "elevation")) %>% 
+#     .[, real_time := time[1]] 
+# }) %>% 
+#   rbindlist()
+# 
+# parametros <- CJ(max_na = seq(0.1, 0.3, 0.1),
+#                  max_consecutive_na = 30,
+#                  r2_min = seq(0.7, 0.9, 0.05),
+#                  outlier_threshold = c(Inf, 2, 2.5, 3),
+#                  fecha_real = unique(radial_wind$real_time))
 
-radial_wind <- purrr::map(files, function(f) {
-    ReadNetCDF(f, vars = c("Vda", "azimuth", "elevation")) %>% 
-    .[, real_time := time[1]] 
-}) %>% 
-  rbindlist()
+# metricas_VAD <- parametros[, {print(paste(max_na, r2_min, outlier_threshold, fecha_real))
+#   test_VAD(fecha_real, with(radial_wind[real_time == fecha_real], vad_fit(Vda, azimuth, range, elevation, max_na = max_na, 
+#                                        max_consecutive_na = max_consecutive_na, r2_min = r2_min,
+#                                        outlier_threshold = outlier_threshold)), 
+#                       soundings)}, by = c(colnames(parametros))]
+# 
+# fwrite(metricas_VAD, "metricas.csv")
 
-parametros <- CJ(max_na = seq(0.1, 0.3, 0.1),
-                 max_consecutive_na = 30,
-                 r2_min = seq(0.7, 0.9, 0.05),
-                 outlier_threshold = c(Inf, 2, 2.5, 3),
-                 fecha_real = unique(radial_wind$real_time)[1:3])
-
-metricas_VAD <- parametros[, test_VAD(fecha_real, 
-                      with(radial_wind, vad_fit(Vda, azimuth, range, elevation, max_na = max_na, 
-                                       max_consecutive_na = max_consecutive_na, r2_min = r2_min,
-                                       outlier_threshold = outlier_threshold)), 
-                      soundings), by = c(colnames(parametros))]
+metricas_VAD <- fread("metricas.csv") %>% 
+  .[, fecha_real := ymd_hms(fecha_real)]
 ```
+
+A partir del gráfico (promedia sobre todos los casos el rmse_spd y el frac_n) que sigue decido usar:
+
+    - `max_na = 0.3`
+    - `max_consecutive_na = 30`
+    - `r2_min = 0.8`
+    - `outlier_threshold = 2.5`
+    
+Para el ciclo diario y vemos que pasar. 
+    
+```{r}
+metricas_VAD[, .(mean_rmse_spd = mean(rmse_spd, na.rm = TRUE),
+                 mean_bias_spd = mean(bias_spd, na.rm = TRUE),
+                 mean_frac_n = mean(frac_n, na.rm = TRUE)), by = .(max_na, max_consecutive_na, r2_min, outlier_threshold)] %>% 
+  ggplot(aes(max_na, r2_min)) +
+  geom_raster(aes(fill = mean_rmse_spd)) +
+  scale_fill_viridis_c(direction = -1) +
+  geom_text(aes(label = round(mean_frac_n, 2))) +
+  facet_wrap(~factor(outlier_threshold)) +
+  theme_minimal()
+  
+metricas_VAD[order(rmse_spd, -frac_n, na.last = TRUE)]
+
+```
+
+```{r}
+metricas_VAD %>% 
+  ggplot(aes(rmse_spd, outlier_threshold)) +
+  geom_point()
+```
+
+
+
 
