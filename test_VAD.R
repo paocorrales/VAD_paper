@@ -24,7 +24,7 @@ test_VAD <- function(real_time, VAD, soundings) {
       .[, ":="(u = sin(dir*pi/180),
                v = cos(dir*pi/180))]
   }
-  
+  # browser()
   perfil <- vad_regrid(VAD, layer_width = 100, ht_out = sounding[, height-119]) %>% 
     setDT() %>% 
     .[, ":="(height = height + 119,
@@ -33,11 +33,13 @@ test_VAD <- function(real_time, VAD, soundings) {
     setnames(c("u", "v"), c("u_vad", "v_vad")) %>% 
     .[sounding, on = "height"] 
   
-  test <- perfil[, .(rmse_spd = sd((spd_vad - spd), na.rm = TRUE),
-                     bias_spd = mean(spd_vad - spd, na.rm = TRUE),
-                     rmse_dir = sqrt(mean((circular(dir_vad, units = "degrees") - circular(dir, units = "degrees"))^2, na.rm = TRUE)),
+  nan_to_na <- function(x) { if (is.nan(x) | is.na(x)) NA_real_ else x }
+  
+  perfil[, .(rmse_spd = nan_to_na(sd((spd_vad - spd), na.rm = TRUE)),
+                     bias_spd = nan_to_na(mean(spd_vad - spd, na.rm = TRUE)),
+                     rmse_dir = nan_to_na(sqrt(mean((circular(dir_vad, units = "degrees") - circular(dir, units = "degrees"))^2, na.rm = TRUE))),
                      # rmse_dir = angular.deviation((circular(dir_vad, units = "degrees") - circular(dir, units = "degrees")), na.rm = TRUE),
-                     bias_dir = mean(circular(dir_vad, units = "degrees") - circular(dir, units = "degrees"), na.rm = TRUE),
+                     bias_dir = nan_to_na(mean(circular(dir_vad, units = "degrees") - circular(dir, units = "degrees"), na.rm = TRUE)),
                      frac_n = mean(!is.na(spd_vad)))]
   
 }
