@@ -353,9 +353,11 @@ metricas_VAD[order(rmse_spd, -frac_n, na.last = TRUE)]
 
 ```{r}
 metricas_VAD %>% 
-  ggplot(aes(rmse_spd, outlier_threshold)) +
-  geom_point()
+  ggplot(aes(factor(fecha_real), rmse_spd)) +
+  geom_boxplot() +
+  coord_flip()
 ```
+
 
 
 
