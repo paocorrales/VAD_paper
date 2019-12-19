@@ -18,13 +18,53 @@ library(dplyr)
 library(patchwork)
 library(stringr)
 library(lubridate)
-library(circular)
+# library(circular)
 source("test_VAD.R")
 ```
 
 Más o menos a ojo decidí probar con el 21/11/2018
 
 ```{r}
+files <- list.files(path = "../datosmunin/RMA4/20181121/", pattern = ".nc", full.names = TRUE)
 
+radial_wind <- purrr::map(files, function(f) { 
+  print(f)
+  ReadNetCDF(f, vars = c("Vda", "azimuth", "elevation"), subset = list(range = 0:60000)) %>% 
+    .[, time := time[1]]
+  }) %>% 
+  rbindlist()
+
+dates <- unique(radial_wind$time)
+
+
+VAD <- purrr::map(dates, function(x) {
+  print(x)
+  with(radial_wind[time == x],   vad_fit(Vda, azimuth, range, elevation, r2 = 0.8, outlier_threshold = 2.5, max_na = 0.3)) %>% 
+    setDT() %>% 
+    .[, time := x]
+  
+})  %>% 
+  rbindlist()
+
+```
+```{r}
+regrid <- VAD[, vad_regrid(.SD, layer_width = 100, ht_out = seq(50, 2000, 50)), by = .(time)] %>% 
+  .[, spd := sqrt(u^2 + v^2)] %>% 
+  .[, spd_smooth := lowess(spd ~ time, f = 0.06, delta = 0)$y, by = height]
+
+
+regrid %>%
+  .[spd < 2] %>% 
+  ggplot(aes(time, height)) +
+  # geom_point(aes(color = spd)) +
+  geom_contour(aes(z = spd_smooth)) +
+  geom_contour(aes(z = spd, color = ..level..)) +
+  scale_color_viridis_c() +
+  scale_x_datetime(date_labels = "%H", date_breaks = "1 hour", expand = c(0,0)) +
+  labs(title = "Hovmoller de la magnitud del viento",
+       subtitle = "21/11/2018",
+       x = "Hora",
+       y = "Altura (m)") +
+  theme_minimal()
 ```
 
