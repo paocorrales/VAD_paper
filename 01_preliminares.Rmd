@@ -33,7 +33,7 @@ Comparando rápidamente el perfil que calcula el VAD (usando la configuración p
 Me voy a quedar con el segundo para hacer las pruebas.
 
 ```{r}
-path <- "../VAD/RMA4/cfrad.20181121_120124.0000_to_20181121_120412.0000_RMA4_0200_02.nc"
+path <- "../VAD_datos/RMA4/cfrad.20181121_120124.0000_to_20181121_120412.0000_RMA4_0200_02.nc"
 
 radial_wind <- ReadNetCDF(path, vars = c("Vda", "azimuth", "elevation"))
 VAD <- with(radial_wind, vad_fit(Vda, azimuth, range, elevation)) %>%
