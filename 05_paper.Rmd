@@ -1,0 +1,272 @@
+---
+title: "05_paper"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+library(tidyverse)
+library(data.table)
+library(metR)
+library(ggperiodic)
+library(rvad)
+source("helpfun.R")
+
+mapa.ar <- setDT(fortify(rnaturalearth::ne_states(country = c("Argentina"))))
+map2 <- setDT(fortify(rnaturalearth::ne_countries(country = c("Brazil", "Uruguay"))))
+mapa.ar <- rbind(mapa.ar, map2) %>%
+   .[, .(long = approx(.I, long, n = .N*5)$y,
+         lat = approx(.I, lat, n = .N*5)$y),
+     by = .(group)] %>%
+   .[, range := rrange(long, lat)] %>%
+   .[, azimuth := razimuth(long, lat)] %>%
+   .[, group2 := cuad_split(azimuth), by = group]
+
+setnames(mapa.ar, "long", "lon")
+
+text.height <- (297 - 50)/25.4
+text.width <- (210 - 50)/25.4
+```
+
+## Intro
+
+```{r aliasing, fig.cap="Velocidad radial (m/s) observada a las 11 UTC por el radar de Resistencia en la elevación $1.49^{\\circ}$ y $V_N =$ 6.7 m/s con aliasing (a) y sin aliasing (b). Notar las escalas diferentes.", fig.subcap=c("Con aliasing \\label{aliasing}", "Sin aliasing \\label{no-aliasing}"), out.extra=" ", fig.width=0.98*text.width, fig.align='center'}
+
+path <- "/home/paola.corrales/VAD_datos/RMA4/casos/cfrad.20181229_110448.0000_to_20181229_110741.0000_RMA4_0200_02.nc"
+radar <- ReadNetCDF(path, vars = c("VRAD", "Vda", "azimuth", "elevation"))
+
+
+radar[elevation == unique(elevation)[2] & !is.na(VRAD)] %>%
+  # RepeatLon(., colname = "azimuth") %>%
+  ggplot(aes(azimuth, range/1000)) +
+  geom_path(data = mapa.ar,
+            aes(group = interaction(group, group2)), color = "darkgray") +
+  geom_point(aes(color = VRAD, size = range)) +
+  scale_color_divergent(name = expression(V[r])) +
+  scale_size_area(max_size = 0.2) +
+  scale_x_continuous(name = NULL, labels = NULL, breaks = seq(0, 359, 90)) +
+  scale_y_continuous(name = "Distancia al centro (km)",
+                     breaks = c(20,40,60,80,100),
+                     limits = c(0, 100), expand = c(0, 0)) +
+  guides(size = "none") +
+  coord_polar() +
+  theme_minimal(base_size = 14) + theme(legend.position = "bottom") 
+
+radar[elevation == unique(elevation)[6] & !is.na(Vda) & abs(Vda) < 15] %>%
+  # RepeatLon(., colname = "azimut") %>%
+  ggplot(aes(azimuth, range/1000)) +
+  geom_path(data = mapa.ar,
+            aes(group = interaction(group, group2)), color = "darkgray") +
+  geom_point(aes(color = Vda, size = range)) +
+  scale_color_divergent(name = expression(V[r])) +
+  scale_size_area(max_size = 0.2) +
+  scale_x_continuous(name = NULL, labels = NULL, breaks = seq(0, 359, 90)) +
+  scale_y_continuous(name = "Distancia al centro (km)",
+                     breaks = c(20,40,60,80,100),
+                     limits = c(0, 20), expand = c(0, 0)) +
+  guides(size = "none") +
+  # geom_hline(yintercept = 40) +
+  coord_polar() +
+  theme_minimal(base_size = 14)
+```
+### Desarrollo matemático
+
+El viento radial medido por el radar para un ángulo de elevación $\theta$ y rango $r$ determinado puede expresarse en función del azimut $\phi$:
+
+\begin{equation}
+\label{eq-vr1}
+V_r =  v \cos(\theta) \cos(\phi) + u \cos(\theta) \sin(\phi) - w \sin(\theta)
+\end{equation}
+
+Donde $u$, $v$ y $w$ son las componentes del viento en coordenadas cartesianas.
+
+La Ecuación \ref{eq-vr1} puede ser expresada como una serie de Fourier de la forma:
+
+\begin{equation}
+\label{eq-vr2}
+V_r =  \frac{1}{2}a_0 + \sum_{n = 1}^{\infty} (a_n \cos(n\phi) + b_n \sin(n \phi))
+\end{equation}
+
+Los coeficientes de la serie de Fourier hasta $n=2$ (Ecuaciones \ref{eq-vr3}) obtenidos a partir del desarrollo de la serie de Taylor, están asociados al viento en el centro del dominio de escaneo (con subíndice 0) como:
+
+\begin{equation} \label{eq-vr3}
+\begin{aligned}
+a_0 = r \cos(\theta)\left ( \frac{\overline{\partial u}}{\partial x} + \frac{\overline{\partial v}}{\partial y} \right) + 2 w \sin(\theta) \\
+a_1 = u_0 \cos(\theta) \\
+b_1 = v_0 \cos(\theta) \\
+a_2 = \frac{1}{2} r \cos(\theta)\left ( \frac{\overline{\partial u}}{\partial x} - \frac{\overline{\partial v}}{\partial y} \right) \\
+b_2 = \frac{1}{2} r \cos(\theta)\left ( \frac{\overline{\partial u}}{\partial y} + \frac{\overline{\partial v}}{\partial x} \right)
+\end{aligned}
+\end{equation}
+
+Los coeficientes de la serie se obtienen mediante el ajuste de cada anillo de datos de radar, es decir los datos para cada $\theta$ y $r$ y realizando una regresión lineal de la forma:
+
+\begin{equation}
+\label{eq-vr4}
+V_r \sim a_1\cos \phi + b_1 \sin \phi
+\end{equation}
+
+Los coeficientes $a_0$, $a_2$ y $b_2$ dan información sobre la divergencia horizontal y la deformación del viento. Estos no fueron estimados por el algoritmo pero es posible su implementación en futuros trabajos.
+
+Finalmente la velocidad y dirección del viento pueden ser calculadas a partir de los coeficientes (Ecuaciones \ref{eq-vr3}).
+
+Velocidad:
+
+\begin{equation}
+\label{eq-vr5}
+V = \frac{(a_{1}^{2} + b_{1}^{2})^{1/2}}{\cos(\theta)}
+\end{equation}
+
+Dirección:
+
+\begin{equation}\label{eq-vr6}
+\alpha = \frac{\pi}{2}-\tan^{-1}(\frac{a_1}{b_1}) \; \; si \; b_1 < 0
+\end{equation}
+\begin{equation}\label{eq-vr7}
+\alpha = \frac{3\pi}{2}-\tan^{-1}(\frac{a_1}{b_1}) \; \; si \; b_1 > 0
+\end{equation}
+
+Las Ecuaciones \ref{eq-vr5} a \ref{eq-vr7} permiten estimar la dirección e intensidad del viento a partir de los datos de velocidad radial observados sobre un anillo correspondiente a un cierto ángulo de elevación y rango. Para calcular la altura de cada anillo es necesario conocer la manera en que se propaga el haz del radar en la atmósfera. Ésta propagación depende del índice de refracción de la atmósfera (N) y este a su vez de la densidad del aire y por lo tanto del perfil vertical de temperatura y humedad. Existen distintas metodologías para calcular el camino que realiza el haz del radar al propagarse [@Zeng2014] y que varían en complejidad y precisión.
+
+Debido a la falta de datos de temperatura y humedad necesarios para calcular el índice de refracción, en el algoritmo de VAD se aplica el modelo 4/3 del radio de la Tierra. Este modelo es utilizado por la mayoría de los programas de procesamiento de datos de radar ya que pese a su simpleza (no toma en cuenta las condiciones de la atmósfera) es aceptable para cualquier ángulo de elevación usado, alturas máximas de entre 10 y 20 km, siempre que el gradiente de N sea cercano a  $-1/a$, donde $a$ es el radio de la Tierra [@Doviak1993].
+
+Para determinar la bondad de la regresión lineal realizada para cada anillo se calcula la raíz del error cuadrático medio asociada ($rmse_a$) y así estimar la diferencia entre las observaciones y el modelo propuesto:
+
+\begin{equation}\label{eq-vr8}
+rmse_a = \sqrt {\sum \frac {(V_r - V_{rmod} )^2} {n-3}}
+\end{equation}
+
+donde $n$ es el número de observaciones presentes en un anillo particular.
+
+
+```{r vad, fig.cap="Velocidad radial (m/s) en función del azimut (grados) para un rango y ańgulo de elevación fijos. En color se  ajusta una función sinusoidal a los datos. \\label{vad}", fig.width=0.75*text.width, fig.align='center', fig.height=0.4*text.height}
+ggplot(radar[range %~% 10000 & elevation == unique(elevation)[6]], aes(azimuth, Vda)) +
+  geom_line() +
+  geom_smooth(method = "lm", formula = y ~ I(sin(x*pi/180)) + I(cos(x*pi/180)), se = F, color = "#20968b") +
+  scale_y_continuous(name = "Velocidad radial (m/s)") +
+  scale_x_continuous(name = "Azimut (grados)") +
+  geom_hline(yintercept = 0) +
+  theme_minimal(base_size = 14)
+
+```
+
+
+Los siguientes controles y parámetros permiten determinar cuales son los anillos de datos válidos y eliminar posibles errores aleatorios antes del ajuste lineal.
+
+* **Ángulos de elevación seleccionados:** La presencia de ecos de terreno pueden generar que los campos de velocidad radial para los primeros ángulos de elevación sean muy ruidosos y sin coherencia espacial. En el otro extremo, en caso de ser necesario, se pueden eliminar los ángulos superiores. Por lo tanto es posible seleccionar el rango de ángulos a ser analizados y utilizados en el cálculo del VAD con los parámetros *Ángulo mínimo* y *Ángulo máximo*.
+* **Selección del dominio de cálculo:** Otra posibilidad para evitar los ecos de terreno es definir un *Radio interior* por debajo del cual no se incluyen los datos para el cálculo de VAD. En el otro extremo, es posible definir un *Radio exterior* para limitar el uso de datos muy lejanos al centro del volumen de escaneo. Esto es importante para evitar inhomogeneidades en el campo de viento horizontal dado que el volumen muestreado por el radar es grande.
+* **Cantidad de datos por anillo:** el algoritmo cuenta la cantidad de datos válidos por anillo y se define un porcentaje de datos faltantes (NaN) límite respecto del total para descartar el anillo. Si se excede dicho umbral (*NaN máximo*) el anillo es descartado. De esta manera se evita la utilización de anillos donde la señal es muy débil.
+* **Hueco continuo en un anillo:** Además de los datos faltantes ubicados de manera aleatoria a lo largo de un anillo, los huecos continuos pueden ocurrir debido a la falta de señal en una determinada región o debido al bloqueo del haz por la presencia de obstáculos. De acuerdo a @Matejka1991 esto puede generar importantes errores en el resultado final, por lo tanto cuando el hueco o *Gap máximo* es mayor a 30° de azimut, el anillo se descarta.
+* **Errores aleatorios:** Los errores aleatorios, producto de ruido del instrumento, pueden ser eliminados utilizando un filtro pasa bajo [@Gao2004]. Este control no elimina anillos pero produce un suavizado de los datos de cada anillo de manera independiente. Es necesario definir la cantidad de datos o $Pesos$ que se utilizarán para calcular el filtro en cada punto.
+
+Luego del ajuste de los datos
+
+* **R cuadrado:** El $r^2$ del modelo ajustado permite obtener una medida de la calidad de ese modelo respecto de las observaciones. A partir de la exploración de resultados preliminares se observó que la definición de un umbral mínimo para el $r^2$ permite descartar anillos que pese a no tener datos faltantes eran erróneos.
+* **Fit iterativo**
+
+### Gap
+
+```{r}
+gaps <- seq(0, 180, 10)
+
+elev_gap <-  lapply(gaps, function(i) {
+  copy(radar) %>%
+    .[azimuth %between% c(0, i), Vda := NA] %>%
+    .[, gap := i]
+  }) %>%
+  rbindlist()
+
+na.omit(elev_gap) %>%
+  .[gap %in% c(10, 30, 60, 90, 120, 150, 180)] %>%
+  .[elevation == unique(elevation)[3] & range < 50000] %>%
+  ggplot(aes(azimuth, range/1000)) +
+  geom_point(aes(color =  Vda, size = range)) +
+  scale_color_divergent() +
+  scale_size_area(max_size = 2, guide = NULL) +
+  coord_polar() +
+  facet_wrap(~gap) +
+  labs(x = "", y = "") +
+  theme_minimal()
+```
+
+```{r}
+vad_gap <- elev_gap %>%
+  .[, vad_fit(Vda, azimuth, range, elevation, max_consecutive_na = 200, max_na = 0.6), by = .(gap)]
+
+regrid_gap <- vad_gap[, vad_regrid(.SD, layer_width = 100, ht_out = seq(100, 2000, 100)), by = .(gap)] %>%
+  .[, spd := sqrt(u^2 + v^2)]
+
+
+regrid_gap[gap == 0, .(height, control = spd)] %>%
+  .[regrid_gap, on = c("height")] %>%
+  ggplot(aes(height, spd - control)) +
+  # geom_point(aes(color = factor(gap))) +
+  geom_line(aes(color = factor(gap))) +
+  coord_flip()
+```
+
+### Propagación del haz
+
+
+### Efecto del volumnen a rangos mayores
+
+```{r}
+range_max <- seq(5, 80, 5)*1000
+
+range <-  map(range_max, function(i) {
+  copy(radar) %>%
+    .[range > i, Vda := NA] %>%
+    .[, range_max := i]
+  }) %>%
+  rbindlist()
+
+vad_range <- range %>%
+  .[, vad_fit(Vda, azimuth, range, elevation, max_consecutive_na = 200, max_na = 0.6), by = .(range_max)]
+
+
+sondeo <- fread("data/soundings_wyoming_87155_201812.csv") %>%
+  .[time == as.Date("2018-12-29T12:00:00Z")] %>% 
+  .[height < 3000]
+
+
+regrid_range <- vad_range[, vad_regrid(.SD, layer_width = 100, ht_out = sondeo$height), by = .(range_max)] %>%
+  .[, spd_vad := sqrt(u^2 + v^2)] 
+
+sondeo[regrid_range, on = "height"] %>%
+  ggplot(aes(spd - spd_vad, height)) +
+  # geom_point(aes(color = factor(gap))) +
+  geom_path(aes(color = factor(range_max))) +
+  scale_color_viridis_d(name = NULL) +
+  labs(x = "sondeo - VAD") +
+  theme_minimal()
+```
+
+
+### Sensibilidad a parámetros
+
+Usando todos los casos que había identificado como buenos.
+
+```{r}
+metricas_VAD <- fread("metricas.csv") %>% 
+  .[, fecha_real := ymd_hms(fecha_real)]
+
+metricas_VAD[, .(mean_rmse_spd = mean(rmse_spd, na.rm = TRUE),
+                 mean_bias_spd = mean(bias_spd, na.rm = TRUE),
+                 mean_frac_n = mean(frac_n, na.rm = TRUE)), by = .(max_na, max_consecutive_na, r2_min, outlier_threshold)] %>% 
+  ggplot(aes(max_na, r2_min)) +
+  geom_raster(aes(fill = mean_rmse_spd)) +
+  scale_fill_viridis_c(direction = -1) +
+  geom_text(aes(label = round(mean_frac_n, 2))) +
+  facet_wrap(~factor(outlier_threshold)) +
+  theme_minimal()
+
+```
+
+```{r}
+metricas_VAD %>% 
+  ggplot(aes(factor(fecha_real), rmse_spd)) +
+  geom_boxplot() +
+  coord_flip()
+```
